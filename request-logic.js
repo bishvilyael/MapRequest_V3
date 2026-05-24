@@ -114,7 +114,7 @@ function getNextUserAction() {
     return "יצירה";
   }
 
-  if (isDeletedRequest(request)) {
+  if (isDeletedRequest(request) || isDeletingRequest(request)) {
     return "שחזור";
   }
 
@@ -147,7 +147,7 @@ function hasSubmitActionNeeded() {
     return true;
   }
 
-  if (isDeletedRequest(request)) {
+  if (isDeletedRequest(request) || isDeletingRequest(request)) {
     return true; // שחזור
   }
 

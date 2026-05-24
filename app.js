@@ -89,8 +89,10 @@ function lockForm() {
   statusSection.classList.add("hidden");
   statusTableWrap.classList.add("hidden");
   statusTableWrap.innerHTML = "";
-  toggleStatusBtn.textContent = "הצג סטטוס בקשות";
-  toggleStatusBtn.classList.add("hidden");
+  if (toggleStatusBtn) {
+    toggleStatusBtn.textContent = "";
+    toggleStatusBtn.classList.add("hidden");
+  }
   selectedReqId = null;
   selectedReqTitle.textContent = "";
   closeFormBtn.classList.add("hidden");
@@ -131,15 +133,9 @@ publishInput.addEventListener("change", function () {
   validateReadyToSubmit();
 });
 
-toggleStatusBtn.addEventListener("click", function () {
-  if (statusTableWrap.classList.contains("hidden")) {
-    statusTableWrap.classList.remove("hidden");
-    toggleStatusBtn.textContent = "הסתר סטטוס בקשות";
-  } else {
-    statusTableWrap.classList.add("hidden");
-    toggleStatusBtn.textContent = "הצג סטטוס בקשות";
-  }
-});
+if (toggleStatusBtn) {
+  toggleStatusBtn.classList.add("hidden");
+}
 closeFormBtn.addEventListener("click", function () {
   window.close();
 
@@ -203,7 +199,7 @@ deleteRequestBtn.addEventListener("click", async function () {
   }
 
   const approved = confirm(
-    "האם למחוק את בקשה מס' " + selectedRequest.reqId + "?\nהבקשה תסומן למחיקה ותטופל בצד השרת."
+    "האם למחוק את בקשה מס' " + selectedRequest.reqId + "?\nהבקשה תסומן למחיקה ותטופל בהקדם."
   );
 
   if (!approved) {
@@ -349,8 +345,10 @@ async function checkBadge() {
 	publishHint.classList.remove("hidden");
 	updatePublishHint();
 
-    if (!emailInput.value.trim()) {
+    if (!getSingleRequest() && !emailInput.value.trim()) {
       emailInput.placeholder = "חובה לרשום כתובת מייל תקינה";
+    } else {
+      emailInput.placeholder = "";
     }
 
     const points = pointsData[badgeNo];
@@ -386,7 +384,7 @@ async function checkBadge() {
 
     validateReadyToUpdateEmail();
 
-    showOk("הפרטים נמצאו. ניתן להשלים אימייל ולשלוח בקשה.");
+    showOk(getInitialFoundMessage());
 
     validateReadyToSubmit();
 
@@ -508,6 +506,28 @@ submitBtn.addEventListener("click", async function () {
   }
 });
 
+function getInitialFoundMessage() {
+  const request = getSingleRequest();
+
+  if (isDeletedRequest(request) || isDeletingRequest(request)) {
+    return "הפרטים נמצאו, ניתן לשחזר את הבקשה.";
+  }
+
+  if (!request && !emailInput.value.trim()) {
+    return "הפרטים נמצאו. יש להשלים אימייל כדי לשלוח בקשה.";
+  }
+
+  if (!request) {
+    return "הפרטים נמצאו. ניתן לשלוח בקשה.";
+  }
+
+  if (isPendingRequest(request)) {
+    return "הפרטים נמצאו. הבקשה בטיפול. ניתן לעדכן הפצה או לרענן סטטוס.";
+  }
+
+  return "הפרטים נמצאו. ניתן לעדכן את הבקשה.";
+}
+
 function validateReadyToSubmit() {
   const email = emailInput.value.trim();
   const actionNeeded = hasSubmitActionNeeded();
@@ -553,8 +573,8 @@ function applyRequestModeToControls() {
     currentRequestMessage = "ניתן לשלוח בקשה חדשה.";
   } else if (isPendingRequest(request)) {
     currentRequestMessage = "הבקשה בטיפול. ניתן לעדכן את אישור ההפצה בלבד ולרענן סטטוס.";
-  } else if (isDeletedRequest(request)) {
-    currentRequestMessage = "הבקשה מחוקה. ניתן לשחזר אותה.";
+  } else if (isDeletedRequest(request) || isDeletingRequest(request)) {
+    currentRequestMessage = "הבקשה מחוקה או בתהליך מחיקה. ניתן לשחזר אותה.";
   } else if (isActiveFinalRequest(request)) {
     currentRequestMessage = "הבקשה פעילה. ניתן לעדכן הפצה או למחוק.";
   } else {

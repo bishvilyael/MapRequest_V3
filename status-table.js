@@ -120,8 +120,10 @@ function renderStatusSection(preferredReqId) {
       getDefaultSelectableReqId();
 
     statusSection.classList.remove("hidden");
-    toggleStatusBtn.classList.remove("hidden");
-    toggleStatusBtn.textContent = "הסתר סטטוס בקשות";
+    if (toggleStatusBtn) {
+      toggleStatusBtn.classList.add("hidden");
+      toggleStatusBtn.textContent = "";
+    }
 
     statusTableWrap.classList.remove("hidden");
     statusTableWrap.innerHTML = buildStatusTableHtml(currentStatusList);
@@ -145,7 +147,7 @@ function renderStatusSection(preferredReqId) {
     updateSelectedReqTitle();
 
     statusSection.classList.add("hidden");
-    toggleStatusBtn.classList.add("hidden");
+    if (toggleStatusBtn) { toggleStatusBtn.classList.add("hidden"); }
     statusTableWrap.classList.add("hidden");
     statusTableWrap.innerHTML = "";
     applyRequestModeToControls();
