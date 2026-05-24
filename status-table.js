@@ -146,7 +146,9 @@ function renderStatusSection(preferredReqId) {
     updateSelectedReqTitle();
 
     statusSection.classList.add("hidden");
-    toggleStatusBtn.classList.add("hidden");
+    if (toggleStatusBtn) {
+      toggleStatusBtn.classList.add("hidden");
+    }
     statusTableWrap.classList.add("hidden");
     statusTableWrap.innerHTML = "";
     applyRequestModeToControls();

@@ -44,6 +44,10 @@ init();
 
 async function init() {
   ensureRefreshStatusButton();
+  if (refreshStatusBtn && !refreshStatusBtn.dataset.bound) {
+    refreshStatusBtn.addEventListener("click", refreshStatusFromButton);
+    refreshStatusBtn.dataset.bound = "1";
+  }
   lockForm();
   await loadPointsJson();
 }
@@ -131,11 +135,11 @@ publishInput.addEventListener("change", function () {
   validateReadyToSubmit();
 });
 
-// במודל בקשה יחידה אין צורך בכפתור הסתרת סטטוס.
-// הטבלה מוצגת תמיד כאשר קיימת בקשה.
+// כפתור הסתרת סטטוס אינו בשימוש במודל הנוכחי.
 if (toggleStatusBtn) {
   toggleStatusBtn.classList.add("hidden");
 }
+
 closeFormBtn.addEventListener("click", function () {
   window.close();
 
@@ -145,22 +149,21 @@ closeFormBtn.addEventListener("click", function () {
 });
 
 function ensureRefreshStatusButton() {
-  if (!refreshStatusBtn) {
-    refreshStatusBtn = document.createElement("button");
-    refreshStatusBtn.id = "refreshStatusBtn";
-    refreshStatusBtn.type = "button";
-    refreshStatusBtn.textContent = "רענון סטטוס";
-    refreshStatusBtn.classList.add("hidden");
-
-    if (toggleStatusBtn && toggleStatusBtn.parentNode) {
-      toggleStatusBtn.parentNode.insertBefore(refreshStatusBtn, toggleStatusBtn.nextSibling);
-    } else if (resetBtn && resetBtn.parentNode) {
-      resetBtn.parentNode.insertBefore(refreshStatusBtn, resetBtn.nextSibling);
-    }
+  if (refreshStatusBtn) {
+    return;
   }
 
-  refreshStatusBtn.removeEventListener("click", refreshStatusFromButton);
-  refreshStatusBtn.addEventListener("click", refreshStatusFromButton);
+  refreshStatusBtn = document.createElement("button");
+  refreshStatusBtn.id = "refreshStatusBtn";
+  refreshStatusBtn.type = "button";
+  refreshStatusBtn.textContent = "רענון סטטוס";
+  refreshStatusBtn.classList.add("hidden");
+
+  if (toggleStatusBtn && toggleStatusBtn.parentNode) {
+    toggleStatusBtn.parentNode.insertBefore(refreshStatusBtn, toggleStatusBtn.nextSibling);
+  } else if (resetBtn && resetBtn.parentNode) {
+    resetBtn.parentNode.insertBefore(refreshStatusBtn, resetBtn.nextSibling);
+  }
 }
 
 async function refreshStatusFromButton() {
@@ -187,11 +190,16 @@ async function refreshStatusFromButton() {
   }
 }
 
-
 deleteRequestBtn.addEventListener("click", async function () {
   const selectedRequest = getSelectedStatusRequest();
 
+  if (!emailInput.value.trim() || !isValidEmail(emailInput.value.trim())) {
+    showError("יש לרשום כתובת מייל תקינה לפני מחיקה.");
+    return;
+  }
+
   if (!canDeleteSelectedRequest()) {
+    showError("אין בקשה פעילה שניתן למחוק.");
     return;
   }
 
@@ -228,11 +236,6 @@ deleteAllRequestsBtn.addEventListener("click", async function () {
 async function sendDeleteRequest(serverAction, extraPayload) {
   let finalMessage = "";
   let finalError = "";
-
-  if (!isValidEmail(emailInput.value.trim())) {
-    showError("יש לרשום כתובת מייל תקינה לפני מחיקה.");
-    return;
-  }
 
   clearMsg();
   lockStatusTable();
@@ -384,7 +387,15 @@ async function checkBadge() {
 
     validateReadyToUpdateEmail();
 
-    showOk(getInitialStatusMessage());
+    const requestAfterCheck = getSingleRequest();
+
+    if (requestAfterCheck && isDeletedRequest(requestAfterCheck)) {
+      showOk("הפרטים נמצאו, ניתן לשחזר את הבקשה.");
+    } else if (!requestAfterCheck && !emailInput.value.trim()) {
+      showOk("הפרטים נמצאו. יש להשלים אימייל כדי לשלוח בקשה חדשה.");
+    } else {
+      showOk(getRequestModeMessage() || "הפרטים נמצאו.");
+    }
 
     validateReadyToSubmit();
 
@@ -453,7 +464,6 @@ submitBtn.addEventListener("click", async function () {
   }
 
   const email = emailInput.value.trim();
-  const userAction = getNextUserAction();
   const baseText = getSubmitButtonBaseText();
   let finalMessage = "";
   let finalError = "";
@@ -470,7 +480,7 @@ submitBtn.addEventListener("click", async function () {
       method: "POST",
       body: JSON.stringify({
         action: "saveRequest",
-        userAction: userAction,
+        userAction: getNextUserAction() || inferNextUserActionSafe(),
         badgeNo: currentBadgeNo,
         nameHe: nameInput.value.trim(),
         email: email,
@@ -569,29 +579,25 @@ function getRequestModeMessage() {
   return currentRequestMessage || "";
 }
 
-function getInitialStatusMessage() {
-  const request = getSingleRequest();
+function inferNextUserActionSafe() {
+  const request = getSingleRequest ? getSingleRequest() : null;
 
   if (!request) {
-    if (!emailInput.value.trim()) {
-      return "הפרטים נמצאו. יש להשלים אימייל ולשלוח בקשה.";
-    }
-    return "הפרטים נמצאו. ניתן לשלוח בקשה.";
+    return "יצירה";
   }
 
-  if (isDeletedRequest(request)) {
-    return "הפרטים נמצאו, ניתן לשחזר את הבקשה.";
+  const action = String(request.action || request.Action || "").trim();
+  const status = String(request.status || "").trim();
+
+  if (action === "-" && status === "נמחק") {
+    return "שחזור";
   }
 
-  if (isPendingRequest(request)) {
-    return "הפרטים נמצאו. הבקשה בטיפול. ניתן לשנות אישור הפצה ולרענן סטטוס.";
+  if (status === "בטיפול" && action && action !== "-") {
+    return action;
   }
 
-  if (isActiveFinalRequest(request)) {
-    return "הפרטים נמצאו. ניתן לעדכן הפצה או למחוק את הבקשה.";
-  }
-
-  return "הפרטים נמצאו.";
+  return "עדכון";
 }
 
 function isValidEmail(email) {

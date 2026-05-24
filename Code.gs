@@ -249,7 +249,7 @@ function saveClientRequestState(data) {
   const existing = findSingleRequestRowByBadgeNo_(sheet, badgeNo);
 
   if (!userAction) {
-    userAction = inferUserActionFromCurrentState_(sheet, existing);
+    userAction = inferUserActionFromExisting_(sheet, existing);
   }
 
   if (!userAction) {
@@ -410,27 +410,23 @@ function deleteAllMapRequests(data) {
   return saveClientRequestState(data);
 }
 
-function inferUserActionFromCurrentState_(sheet, existing) {
+function inferUserActionFromExisting_(sheet, existing) {
   if (!existing) {
     return 'יצירה';
   }
 
-  const oldAction = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Action')) || '-';
-  const oldStatus = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Status'));
+  const action = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Action')) || '-';
+  const status = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Status'));
 
-  if ((oldAction === '-' || oldAction === '') && oldStatus === 'נמחק') {
+  if (action === '-' && status === 'נמחק') {
     return 'שחזור';
   }
 
-  if (oldStatus === 'בטיפול' && ['יצירה', 'עדכון', 'מחיקה', 'שחזור'].indexOf(oldAction) >= 0) {
-    return oldAction;
+  if (status === 'בטיפול' && action !== '-') {
+    return normalizeUserAction_(action);
   }
 
-  if (['נוצר', 'עודכן', 'שוחזר'].indexOf(oldStatus) >= 0) {
-    return 'עדכון';
-  }
-
-  return '';
+  return 'עדכון';
 }
 
 function normalizeUserAction_(value) {
@@ -480,7 +476,7 @@ function ensureRequestLogHeaders_(sheet) {
     'ReqId',
     'DateTime',
     'BadgeNo',
-    'NameHeb',
+    'NameHe',
     'UserAction',
     'OldAction',
     'OldStatus',
@@ -517,7 +513,7 @@ function appendRequestLog_(entry) {
     'ReqId': entry.reqId || '',
     'DateTime': new Date(),
     'BadgeNo': entry.badgeNo || '',
-    'NameHeb': entry.nameHe || '',
+    'NameHe': entry.nameHe || '',
     'UserAction': entry.userAction || '',
     'OldAction': entry.oldAction || '',
     'OldStatus': entry.oldStatus || '',
