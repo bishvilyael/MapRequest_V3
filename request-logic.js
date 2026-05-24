@@ -6,7 +6,12 @@ function getSingleRequest() {
 }
 
 function getSubmitButtonBaseText() {
+  const request = getSingleRequest();
   const action = getNextUserAction();
+
+  if (request && normalizeAction(request.action) === "שחזור") {
+    return "עדכון בקשה";
+  }
 
   switch (action) {
     case "יצירה":
