@@ -4,7 +4,7 @@ const LOCAL_SPREADSHEET_ID = '1KAXwu3vIxssREWIyLdM_tvmvDmeGZhETNvOGgO6PaZA';
 const LOCAL_EMAILS_SHEET_NAME = 'מיילים מקומיים';
 const REQUESTS_SHEET_NAME = 'בקשות מפה אישית';
 const NOTIFY_EMAIL = 'jiluz11@gmail.com';
-const SCRIPT_VERSION = '2026-05-24-SINGLE-REQUEST-ACTION-CLIENT-LOG-V1';
+const SCRIPT_VERSION = '2026-05-24-SINGLE-REQUEST-ACTION-CLIENT-LOG-V2';
 const REQUESTS_LOG_SHEET_NAME = 'לוג בקשות מפה אישית';
 
 function doGet(e) {
@@ -230,7 +230,7 @@ function saveClientRequestState(data) {
   const nameHe = normalizeText(data.nameHe);
   const email = normalizeText(data.email);
   const publishAllowed = !!data.publishAllowed;
-  const userAction = normalizeUserAction_(data.userAction || data.requestAction);
+  let userAction = normalizeUserAction_(data.userAction || data.requestAction);
   const pointCount = toSafeNumber(data.pointCount);
   const childCount = toSafeNumber(data.childCount);
 
@@ -242,6 +242,16 @@ function saveClientRequestState(data) {
     });
   }
 
+  const sheet = getRequestsSheet_();
+  ensureRequestHeaders(sheet);
+
+  const now = new Date();
+  const existing = findSingleRequestRowByBadgeNo_(sheet, badgeNo);
+
+  if (!userAction) {
+    userAction = inferUserActionFromCurrentState_(sheet, existing);
+  }
+
   if (!userAction) {
     return jsonOutput({
       ok: false,
@@ -249,12 +259,6 @@ function saveClientRequestState(data) {
       error: 'Missing or invalid userAction'
     });
   }
-
-  const sheet = getRequestsSheet_();
-  ensureRequestHeaders(sheet);
-
-  const now = new Date();
-  const existing = findSingleRequestRowByBadgeNo_(sheet, badgeNo);
 
   if (existing) {
     const oldAction = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Action')) || '-';
@@ -277,6 +281,7 @@ function saveClientRequestState(data) {
     appendRequestLog_({
       reqId: reqId,
       badgeNo: badgeNo,
+      nameHe: nameHe,
       userAction: userAction,
       oldAction: oldAction,
       oldStatus: oldStatus,
@@ -348,6 +353,7 @@ function saveClientRequestState(data) {
   appendRequestLog_({
     reqId: reqId,
     badgeNo: badgeNo,
+    nameHe: nameHe,
     userAction: userAction,
     oldAction: '',
     oldStatus: '',
@@ -404,6 +410,29 @@ function deleteAllMapRequests(data) {
   return saveClientRequestState(data);
 }
 
+function inferUserActionFromCurrentState_(sheet, existing) {
+  if (!existing) {
+    return 'יצירה';
+  }
+
+  const oldAction = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Action')) || '-';
+  const oldStatus = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Status'));
+
+  if ((oldAction === '-' || oldAction === '') && oldStatus === 'נמחק') {
+    return 'שחזור';
+  }
+
+  if (oldStatus === 'בטיפול' && ['יצירה', 'עדכון', 'מחיקה', 'שחזור'].indexOf(oldAction) >= 0) {
+    return oldAction;
+  }
+
+  if (['נוצר', 'עודכן', 'שוחזר'].indexOf(oldStatus) >= 0) {
+    return 'עדכון';
+  }
+
+  return '';
+}
+
 function normalizeUserAction_(value) {
   const text = normalizeText(value);
   const allowed = ['יצירה', 'עדכון', 'מחיקה', 'שחזור'];
@@ -451,6 +480,7 @@ function ensureRequestLogHeaders_(sheet) {
     'ReqId',
     'DateTime',
     'BadgeNo',
+    'NameHeb',
     'UserAction',
     'OldAction',
     'OldStatus',
@@ -487,6 +517,7 @@ function appendRequestLog_(entry) {
     'ReqId': entry.reqId || '',
     'DateTime': new Date(),
     'BadgeNo': entry.badgeNo || '',
+    'NameHeb': entry.nameHe || '',
     'UserAction': entry.userAction || '',
     'OldAction': entry.oldAction || '',
     'OldStatus': entry.oldStatus || '',

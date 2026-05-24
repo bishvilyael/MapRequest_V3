@@ -33,7 +33,8 @@ function normalizeAction(value) {
 }
 
 function isFinalAction(action) {
-  return normalizeAction(action) === "-";
+  const value = normalizeAction(action);
+  return value === "-" || value === "";
 }
 
 function isPendingRequest(request) {
@@ -114,13 +115,17 @@ function getNextUserAction() {
     return "יצירה";
   }
 
-  if (isDeletedRequest(request) || isDeletingRequest(request)) {
+  if (isDeletedRequest(request)) {
     return "שחזור";
   }
 
   if (isPendingRequest(request)) {
     // שינוי הפצה בבקשה שכבר בטיפול לא מחליף את הפעולה המקורית.
-    return normalizeAction(request.action);
+    const existingAction = normalizeAction(request.action || request.Action);
+    if (["יצירה", "עדכון", "מחיקה", "שחזור"].indexOf(existingAction) >= 0) {
+      return existingAction;
+    }
+    return "עדכון";
   }
 
   if (isActiveFinalRequest(request)) {
@@ -147,7 +152,7 @@ function hasSubmitActionNeeded() {
     return true;
   }
 
-  if (isDeletedRequest(request) || isDeletingRequest(request)) {
+  if (isDeletedRequest(request)) {
     return true; // שחזור
   }
 
@@ -168,6 +173,7 @@ function canDeleteSelectedRequest() {
   return (
     currentBadgeNo !== null &&
     selectedRequest !== null &&
+    isValidEmail(emailInput.value.trim()) &&
     !isDeletedRequest(selectedRequest) &&
     !isDeletingRequest(selectedRequest) &&
     !requestBusy
