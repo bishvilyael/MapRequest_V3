@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>בקשה למפה אישית</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="box">
+<h1>
+  בקשה למפה אישית
+  <span id="selectedReqTitle" class="selected-req-title"></span>
+</h1>
+
+  <div class="row">
+    <div class="field">
+      <label>מספר יעל</label>
+      <div class="badge-line">
+        <input id="badgeNo" type="text" dir="ltr">
+        <button id="checkBtn">בדיקה</button>
+        <button id="resetBtn" class="hidden">בדיקה מחדש</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>שם בעברית</label>
+      <input id="nameHe" type="text" disabled>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="field">
+      <label>אימייל</label>
+      <div class="email-line">
+        <input id="email" type="email" disabled>
+        <button id="updateEmailBtn" disabled>עדכון אימייל</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="checkbox-row">
+        <input id="publishAllowed" type="checkbox" disabled>
+        <span>להפיץ את המפה שלי באתר</span>
+      </label>
+
+      <div id="publishHint" class="publish-hint hidden"></div>
+    </div>
+  </div>
+
+<div id="pointsInfo" class="msg info"></div>
+
+<div class="submit-line">
+  <button id="submitBtn" disabled>שליחת בקשה</button>
+  <button id="deleteRequestBtn" type="button" class="danger-btn hidden" disabled>מחק בקשה</button>
+  <button id="deleteAllRequestsBtn" type="button" class="danger-btn hidden" disabled>מחק הכל</button>
+  <button id="toggleStatusBtn" type="button" class="hidden">הצג סטטוס בקשות</button>
+  <button id="closeFormBtn" type="button" class="hidden">סגור</button>
+</div>
+
+<div id="msg" class="msg"></div>
+
+<div id="statusSection" class="status-section hidden">
+  <div id="statusTableWrap" class="status-table-wrap hidden"></div>
+</div>
+<script src="ui-helpers.js"></script>
+<script src="request-logic.js"></script>
+<script src="status-table.js"></script>
+<script src="email.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
