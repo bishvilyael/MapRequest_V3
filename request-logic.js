@@ -41,12 +41,20 @@ function isPendingRequest(request) {
 }
 
 function isDeletedRequest(request) {
-  return request && isFinalAction(request.action) && normalizeStatus(request.status) === "נמחק";
+  const action = normalizeAction(request && (request.action || request.Action));
+  const status = normalizeStatus(request && request.status);
+
+  // תומך גם במודל החדש: Action=-, Status=נמחק
+  // וגם במצב מחיקה ממתין: Action=מחיקה, Status=בטיפול
+  return request && (
+    status === "נמחק" ||
+    action === "מחיקה"
+  );
 }
 
 function isActiveFinalRequest(request) {
   const status = normalizeStatus(request && request.status);
-  return request && isFinalAction(request.action) && ["נוצר", "עודכן", "שוחזר"].indexOf(status) >= 0;
+  return request && isFinalAction(request.action) && ["נוצר", "עודכן", "שוחזר", "הושלם"].indexOf(status) >= 0;
 }
 
 function isDeletingRequest(request) {

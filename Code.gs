@@ -103,6 +103,7 @@ function doPost(e) {
 function handleUpdateEmail(data) {
   const badgeNo = normalizeBadgeNo(data.badgeNo);
   const email = normalizeText(data.email);
+  const nameHe = normalizeText(data.nameHe);
 
   if (!badgeNo || !email) {
     return jsonOutput({
@@ -114,6 +115,41 @@ function handleUpdateEmail(data) {
 
   const result = updatePersonEmail(badgeNo, email);
 
+  const requestSheet = getRequestsSheet_();
+  ensureRequestHeaders(requestSheet);
+  const existing = findSingleRequestRowByBadgeNo_(requestSheet, badgeNo);
+
+  if (existing) {
+    const oldAction = normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'Action')) || '-';
+    const oldStatus = normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'Status'));
+    const oldEmail = normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'Email'));
+    const oldPublish = normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'PublishAllowed'));
+    const reqId = normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'ReqId'));
+    const requestName = nameHe || normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'שם בעברית'));
+
+    setCellByHeader(requestSheet, existing.row, 'Email', email);
+    setCellByHeader(requestSheet, existing.row, 'reqUpdate', new Date());
+    setCellByHeader(requestSheet, existing.row, 'ScriptVersion', SCRIPT_VERSION);
+
+    appendRequestLog_({
+      reqId: reqId,
+      badgeNo: badgeNo,
+      userName: requestName,
+      userAction: 'עדכון אימייל',
+      oldAction: oldAction,
+      oldStatus: oldStatus,
+      newAction: oldAction,
+      newStatus: oldStatus,
+      oldPublish: oldPublish,
+      newPublish: oldPublish,
+      oldEmail: oldEmail,
+      newEmail: email,
+      message: 'האימייל עודכן'
+    });
+
+    SpreadsheetApp.flush();
+  }
+
   return jsonOutput({
     ok: result.updated,
     version: SCRIPT_VERSION,
@@ -121,10 +157,11 @@ function handleUpdateEmail(data) {
     badgeNo: badgeNo,
     row: result.row,
     oldEmail: result.oldEmail,
-    newEmail: result.newEmail,
+    newEmail: email,
     error: result.updated ? '' : 'BadgeNo not found'
   });
 }
+
 function findPersonByBadgeNo_SWITCH(badgeNo) {
 
   badgeNo = biNormalizeBadgeNo_(badgeNo);
@@ -281,7 +318,7 @@ function saveClientRequestState(data) {
     appendRequestLog_({
       reqId: reqId,
       badgeNo: badgeNo,
-      nameHe: nameHe,
+      userName: nameHe,
       userAction: userAction,
       oldAction: oldAction,
       oldStatus: oldStatus,
@@ -353,7 +390,7 @@ function saveClientRequestState(data) {
   appendRequestLog_({
     reqId: reqId,
     badgeNo: badgeNo,
-    nameHe: nameHe,
+    userName: nameHe,
     userAction: userAction,
     oldAction: '',
     oldStatus: '',
@@ -418,7 +455,7 @@ function inferUserActionFromExisting_(sheet, existing) {
   const action = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Action')) || '-';
   const status = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Status'));
 
-  if (action === '-' && status === 'נמחק') {
+  if (status === 'נמחק' || action === 'מחיקה') {
     return 'שחזור';
   }
 
@@ -476,7 +513,7 @@ function ensureRequestLogHeaders_(sheet) {
     'ReqId',
     'DateTime',
     'BadgeNo',
-    'NameHe',
+    'UserName',
     'UserAction',
     'OldAction',
     'OldStatus',
@@ -484,6 +521,8 @@ function ensureRequestLogHeaders_(sheet) {
     'NewStatus',
     'OldPublish',
     'NewPublish',
+    'OldEmail',
+    'NewEmail',
     'Message',
     'ScriptVersion'
   ];
@@ -513,7 +552,7 @@ function appendRequestLog_(entry) {
     'ReqId': entry.reqId || '',
     'DateTime': new Date(),
     'BadgeNo': entry.badgeNo || '',
-    'NameHe': entry.nameHe || '',
+    'UserName': entry.userName || entry.nameHe || '',
     'UserAction': entry.userAction || '',
     'OldAction': entry.oldAction || '',
     'OldStatus': entry.oldStatus || '',
@@ -521,6 +560,8 @@ function appendRequestLog_(entry) {
     'NewStatus': entry.newStatus || '',
     'OldPublish': entry.oldPublish || '',
     'NewPublish': entry.newPublish || '',
+    'OldEmail': entry.oldEmail || '',
+    'NewEmail': entry.newEmail || '',
     'Message': entry.message || '',
     'ScriptVersion': SCRIPT_VERSION
   };
@@ -597,6 +638,7 @@ function requestRowToClientObject_(sheet, rowNumber) {
     action: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'Action')),
     status: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'Status')),
     publishAllowed: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'PublishAllowed')),
+    email: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'Email')),
     pointCount: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'PointCount')),
     childCount: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'ChildCount')),
     reqDate: formatDateForClient_(getCellValueByHeader_(sheet, rowNumber, 'reqDate')),

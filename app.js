@@ -171,6 +171,11 @@ async function refreshStatusFromButton() {
     return;
   }
 
+  if (!isValidEmail(emailInput.value.trim())) {
+    showError("יש לרשום כתובת מייל תקינה לפני רענון סטטוס.");
+    return;
+  }
+
   clearMsg();
   refreshStatusBtn.disabled = true;
   refreshStatusBtn.textContent = "מרענן...";
@@ -339,6 +344,11 @@ async function checkBadge() {
 
 	const selectedRequest = getSelectedStatusRequest();
 
+    if (!emailInput.value.trim() && selectedRequest && selectedRequest.email) {
+      emailInput.value = selectedRequest.email;
+      originalEmail = emailInput.value.trim();
+    }
+
 	if (selectedRequest && selectedRequest.publishAllowed) {
 	  publishInput.checked = selectedRequest.publishAllowed === "כן";
 	} else {
@@ -433,7 +443,9 @@ updateEmailBtn.addEventListener("click", async function () {
       body: JSON.stringify({
         action: "updateEmail",
         badgeNo: currentBadgeNo,
+        nameHe: nameInput.value.trim(),
         email: email,
+        selectedReqId: selectedReqId,
       }),
     });
 
@@ -445,7 +457,8 @@ updateEmailBtn.addEventListener("click", async function () {
     }
 
     originalEmail = email;
-    showOk("האימייל עודכן ברשימה");
+    await refreshCurrentBadgeStatus(selectedReqId);
+    showOk("האימייל עודכן ברשימה ובבקשה");
   } catch (err) {
     showError("שגיאה בעדכון האימייל: " + (err.message || err));
   } finally {
@@ -530,6 +543,9 @@ function validateReadyToSubmit() {
 
   submitBtn.disabled = !formReady;
   publishInput.disabled = !canEditPublish();
+  if (refreshStatusBtn) {
+    refreshStatusBtn.disabled = !(currentBadgeNo !== null && isValidEmail(email) && !requestBusy);
+  }
   validateDeleteButtons();
 
   // אין לנעול את טבלת הבקשות רק בגלל שינוי ממתין.
@@ -560,10 +576,10 @@ function applyRequestModeToControls() {
 
   if (!request) {
     currentRequestMessage = "ניתן לשלוח בקשה חדשה.";
+  } else if (isDeletedRequest(request)) {
+    currentRequestMessage = "הבקשה נמחקה/תימחק לפי בקשתך. ניתן לשחזר את הבקשה.";
   } else if (isPendingRequest(request)) {
     currentRequestMessage = "הבקשה בטיפול. ניתן לעדכן את אישור ההפצה בלבד ולרענן סטטוס.";
-  } else if (isDeletedRequest(request)) {
-    currentRequestMessage = "הבקשה מחוקה. ניתן לשחזר אותה.";
   } else if (isActiveFinalRequest(request)) {
     currentRequestMessage = "הבקשה פעילה. ניתן לעדכן הפצה או למחוק.";
   } else {
@@ -589,7 +605,7 @@ function inferNextUserActionSafe() {
   const action = String(request.action || request.Action || "").trim();
   const status = String(request.status || "").trim();
 
-  if (action === "-" && status === "נמחק") {
+  if (status === "נמחק" || action === "מחיקה") {
     return "שחזור";
   }
 
