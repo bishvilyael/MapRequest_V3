@@ -9,7 +9,7 @@ function getSubmitButtonBaseText() {
   const request = getSingleRequest();
   const action = getNextUserAction();
 
-  if (request && normalizeAction(request.action || request.Action) === "שחזור") {
+  if (request && normalizeAction(request.action) === "שחזור") {
     return "עדכון בקשה";
   }
 
@@ -37,40 +37,37 @@ function normalizeAction(value) {
   return String(value || "").trim();
 }
 
-function getRequestStatus(request) {
-  return normalizeStatus(request && (request.status || request.Status));
-}
-
-function getRequestAction(request) {
-  return normalizeAction(request && (request.action || request.Action));
+function isFinalAction(action) {
+  return normalizeAction(action) === "-";
 }
 
 function isPendingRequest(request) {
-  return request && getRequestStatus(request) === "בטיפול";
-}
-
-function isCompletedRequest(request) {
-  return request && getRequestStatus(request) === "הושלם";
+  return request && normalizeStatus(request.status) === "בטיפול" && !isFinalAction(request.action);
 }
 
 function isDeletedRequest(request) {
-  return request && getRequestAction(request) === "מחיקה";
-}
+  const action = normalizeAction(request && (request.action || request.Action));
+  const status = normalizeStatus(request && request.status);
 
-function isActiveRequest(request) {
-  const action = getRequestAction(request);
-  return request && ["יצירה", "עדכון", "שחזור"].indexOf(action) >= 0;
+  // תומך גם במודל החדש: Action=-, Status=נמחק
+  // וגם במצב מחיקה ממתין: Action=מחיקה, Status=בטיפול
+  return request && (
+    status === "נמחק" ||
+    action === "מחיקה"
+  );
 }
 
 function isActiveFinalRequest(request) {
-  return isCompletedRequest(request) && isActiveRequest(request);
+  const status = normalizeStatus(request && request.status);
+  return request && isFinalAction(request.action) && ["נוצר", "עודכן", "שוחזר", "הושלם"].indexOf(status) >= 0;
 }
 
 function isDeletingRequest(request) {
-  return isDeletedRequest(request);
+  return request && normalizeAction(request.action || request.Action) === "מחיקה";
 }
 
 function getActiveStatusList() {
+  // תאימות לקוד הישן. במודל החדש הרשימה כוללת לכל היותר בקשה אחת.
   return currentStatusList || [];
 }
 
@@ -135,24 +132,21 @@ function getNextUserAction() {
   }
 
   if (isPendingRequest(request)) {
-    return getRequestAction(request) || "עדכון";
+    // שינוי הפצה בבקשה שכבר בטיפול לא מחליף את הפעולה המקורית.
+    return normalizeAction(request.action) || "עדכון";
   }
 
   if (isActiveFinalRequest(request)) {
     return "עדכון";
   }
 
+  // ברירת מחדל שמרנית.
   return "עדכון";
 }
 
 function canEditPublish() {
   const request = getSingleRequest();
-
-  return (
-    currentBadgeNo !== null &&
-    !isDeletedRequest(request) &&
-    !requestBusy
-  );
+  return !isDeletedRequest(request) && currentBadgeNo !== null && !requestBusy;
 }
 
 function hasSubmitActionNeeded() {
@@ -167,7 +161,7 @@ function hasSubmitActionNeeded() {
   }
 
   if (isDeletedRequest(request)) {
-    return true;
+    return true; // שחזור
   }
 
   if (isPendingRequest(request)) {
@@ -189,8 +183,8 @@ function canDeleteSelectedRequest() {
     currentBadgeNo !== null &&
     selectedRequest !== null &&
     isValidEmail(email) &&
-    isActiveRequest(selectedRequest) &&
     !isDeletedRequest(selectedRequest) &&
+    !isDeletingRequest(selectedRequest) &&
     !requestBusy
   );
 }
