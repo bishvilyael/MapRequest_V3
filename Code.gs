@@ -4,7 +4,10 @@ const LOCAL_SPREADSHEET_ID = '1KAXwu3vIxssREWIyLdM_tvmvDmeGZhETNvOGgO6PaZA';
 const LOCAL_EMAILS_SHEET_NAME = 'מיילים מקומיים';
 const REQUESTS_SHEET_NAME = 'בקשות מפה אישית';
 const NOTIFY_EMAIL = 'jiluz11@gmail.com';
-const SCRIPT_VERSION = '2026-05-24-SINGLE-REQUEST-ACTION-CLIENT-LOG-V2';
+const MAIL_FROM_ALIAS = 'BishvilYael@gmail.com';
+const DEV_REQUEST_LABEL = 'מפות אישיות/דימוי מבקשים - בקשות';
+const MAIL_FROM_NAME = 'בשביל יעל - מפות אישיות';
+const SCRIPT_VERSION = '2026-05-24-SINGLE-REQUEST-ACTION-CLIENT-LOG-V2-EMAIL-LOG';
 const REQUESTS_LOG_SHEET_NAME = 'לוג בקשות מפה אישית';
 
 function doGet(e) {
@@ -13,11 +16,7 @@ function doGet(e) {
     const badgeNo = normalizeBadgeNo(params.badgeNo);
 
     if (!badgeNo) {
-      return jsonOutput({
-        ok: false,
-        version: SCRIPT_VERSION,
-        error: 'Missing badgeNo'
-      });
+      return jsonOutput({ ok: false, version: SCRIPT_VERSION, error: 'Missing badgeNo' });
     }
 
     const person = findPersonByBadgeNo_SWITCH(badgeNo);
@@ -34,13 +33,10 @@ function doGet(e) {
       });
     }
 
-    // מנרמל את האימייל לשדה יחיד עבור הטופס.
-    // אם אין person.email, משתמשים באימייל המקומי כמקור חלופי.
     if (!normalizeText(person.email)) {
       person.email = getLocalEmailByBadgeNo(badgeNo);
     }
 
-    // הטופס לא צריך לדעת מה מקור האימייל.
     delete person.localEmail;
 
     return jsonOutput({
@@ -53,11 +49,7 @@ function doGet(e) {
     });
 
   } catch (err) {
-    return jsonOutput({
-      ok: false,
-      version: SCRIPT_VERSION,
-      error: String(err)
-    });
+    return jsonOutput({ ok: false, version: SCRIPT_VERSION, error: String(err) });
   }
 }
 
@@ -66,130 +58,107 @@ function doPost(e) {
     const data = JSON.parse(e.postData.contents || '{}');
     const action = String(data.action || 'submitRequest').trim();
 
-    if (action === 'updateEmail') {
-      return handleUpdateEmail(data);
-    }
+    if (action === 'updateEmail') return handleUpdateEmail(data);
 
-    // מודל חדש: הלקוח קובע את הפעולה הלוגית, השרת שומר בלבד.
     if (action === 'saveRequest' || action === 'submitRequest') {
       return saveClientRequestState(data);
     }
 
-    // הכנה לשלב הבא בצד הלקוח.
-    if (action === 'deleteRequest') {
-      return deleteMapRequest(data);
-    }
+    if (action === 'deleteRequest') return deleteMapRequest(data);
+    if (action === 'deleteAllRequests') return deleteAllMapRequests(data);
 
-    // הכנה לשלב הבא בצד הלקוח.
-    if (action === 'deleteAllRequests') {
-      return deleteAllMapRequests(data);
-    }
-
-    return jsonOutput({
-      ok: false,
-      version: SCRIPT_VERSION,
-      error: 'Unknown action: ' + action
-    });
+    return jsonOutput({ ok: false, version: SCRIPT_VERSION, error: 'Unknown action: ' + action });
 
   } catch (err) {
-    return jsonOutput({
-      ok: false,
-      version: SCRIPT_VERSION,
-      error: String(err)
-    });
+    return jsonOutput({ ok: false, version: SCRIPT_VERSION, error: String(err) });
   }
 }
 
 function handleUpdateEmail(data) {
   const badgeNo = normalizeBadgeNo(data.badgeNo);
   const email = normalizeText(data.email);
-  const nameHe = normalizeText(data.nameHe);
+  const inputNameHe = normalizeText(data.nameHe || data.userName);
 
   if (!badgeNo || !email) {
-    return jsonOutput({
-      ok: false,
-      version: SCRIPT_VERSION,
-      error: 'Missing badgeNo or email'
-    });
+    return jsonOutput({ ok: false, version: SCRIPT_VERSION, error: 'Missing badgeNo or email' });
   }
 
   const result = updatePersonEmail(badgeNo, email);
 
-  const requestSheet = getRequestsSheet_();
-  ensureRequestHeaders(requestSheet);
-  const existing = findSingleRequestRowByBadgeNo_(requestSheet, badgeNo);
+  const sheet = getRequestsSheet_();
+  ensureRequestHeaders(sheet);
+
+  const existing = findSingleRequestRowByBadgeNo_(sheet, badgeNo);
+  let requestUpdated = false;
+  let reqId = '';
+  let userName = inputNameHe;
+  let oldRequestEmail = '';
+  let oldAction = '';
+  let oldStatus = '';
 
   if (existing) {
-    const oldAction = normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'Action')) || '-';
-    const oldStatus = normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'Status'));
-    const oldEmail = normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'Email'));
-    const oldPublish = normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'PublishAllowed'));
-    const reqId = normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'ReqId'));
-    const requestName = nameHe || normalizeText(getCellValueByHeader_(requestSheet, existing.row, 'שם בעברית'));
+    reqId = normalizeText(getCellValueByHeader_(sheet, existing.row, 'ReqId'));
+    userName = userName || normalizeText(getCellValueByHeader_(sheet, existing.row, 'שם בעברית'));
+    oldRequestEmail = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Email'));
+    oldAction = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Action')) || '-';
+    oldStatus = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Status'));
 
-    setCellByHeader(requestSheet, existing.row, 'Email', email);
-    setCellByHeader(requestSheet, existing.row, 'reqUpdate', new Date());
-    setCellByHeader(requestSheet, existing.row, 'ScriptVersion', SCRIPT_VERSION);
-
-    appendRequestLog_({
-      reqId: reqId,
-      badgeNo: badgeNo,
-      userName: requestName,
-      userAction: 'עדכון אימייל',
-      oldAction: oldAction,
-      oldStatus: oldStatus,
-      newAction: oldAction,
-      newStatus: oldStatus,
-      oldPublish: oldPublish,
-      newPublish: oldPublish,
-      oldEmail: oldEmail,
-      newEmail: email,
-      message: 'האימייל עודכן'
-    });
-
-    SpreadsheetApp.flush();
+    setCellByHeader(sheet, existing.row, 'Email', email);
+    setCellByHeader(sheet, existing.row, 'reqUpdate', new Date());
+    setCellByHeader(sheet, existing.row, 'ScriptVersion', SCRIPT_VERSION);
+    requestUpdated = true;
   }
+
+  appendRequestLog_({
+    reqId: reqId,
+    badgeNo: badgeNo,
+    userName: userName,
+    userAction: 'עדכון אימייל',
+    oldAction: oldAction,
+    oldStatus: oldStatus,
+    newAction: oldAction,
+    newStatus: oldStatus,
+    oldPublish: '',
+    newPublish: '',
+    message: 'האימייל עודכן מ-' + (oldRequestEmail || result.oldEmail || '') + ' ל-' + email
+  });
+
+  SpreadsheetApp.flush();
 
   return jsonOutput({
     ok: result.updated,
     version: SCRIPT_VERSION,
     updated: result.updated,
+    requestUpdated: requestUpdated,
     badgeNo: badgeNo,
     row: result.row,
+    reqId: reqId,
     oldEmail: result.oldEmail,
-    newEmail: email,
+    oldRequestEmail: oldRequestEmail,
+    newEmail: result.newEmail,
     error: result.updated ? '' : 'BadgeNo not found'
   });
 }
 
 function findPersonByBadgeNo_SWITCH(badgeNo) {
-
   badgeNo = biNormalizeBadgeNo_(badgeNo);
-
-  if (!badgeNo) {
-    return null;
-  }
-
-  if (USE_BADGE_INDEX) {
-    return findPersonByBadgeNoFromIndex(badgeNo);
-  }
-
+  if (!badgeNo) return null;
+  if (USE_BADGE_INDEX) return findPersonByBadgeNoFromIndex(badgeNo);
   return findPersonByBadgeNo(badgeNo);
 }
+
 function findPersonByBadgeNo(badgeNo) {
   const sourceSS = SpreadsheetApp.openById(SOURCE_SPREADSHEET_ID);
   const sourceSheet = sourceSS.getSheetByName(SOURCE_SHEET_NAME);
 
-  if (!sourceSheet) {
-    throw new Error('Sheet not found: ' + SOURCE_SHEET_NAME);
-  }
+  if (!sourceSheet) throw new Error('Sheet not found: ' + SOURCE_SHEET_NAME);
 
   const values = sourceSheet.getDataRange().getValues();
 
   for (let i = 1; i < values.length; i++) {
-    const nameHe = normalizeText(values[i][0]);        // A
-    const rowBadgeNo = normalizeBadgeNo(values[i][1]); // B
-    const sourceEmail = normalizeText(values[i][4]);   // E
+    const nameHe = normalizeText(values[i][0]);
+    const rowBadgeNo = normalizeBadgeNo(values[i][1]);
+    const sourceEmail = normalizeText(values[i][4]);
 
     if (rowBadgeNo === badgeNo) {
       const localEmail = getLocalEmailByBadgeNo(badgeNo);
@@ -206,24 +175,24 @@ function findPersonByBadgeNo(badgeNo) {
 
   return null;
 }
+
 function getLocalEmailByBadgeNo(badgeNo) {
   const ss = SpreadsheetApp.openById(LOCAL_SPREADSHEET_ID);
   const sheet = ss.getSheetByName(LOCAL_EMAILS_SHEET_NAME);
 
-  if (!sheet) {
-    return '';
-  }
+  if (!sheet) return '';
 
   const values = sheet.getDataRange().getValues();
 
   for (let i = 1; i < values.length; i++) {
     if (normalizeBadgeNo(values[i][0]) === badgeNo) {
-      return normalizeText(values[i][1]); // Email
+      return normalizeText(values[i][1]);
     }
   }
 
   return '';
 }
+
 function updatePersonEmail(badgeNo, email) {
   const ss = SpreadsheetApp.openById(LOCAL_SPREADSHEET_ID);
   let sheet = ss.getSheetByName(LOCAL_EMAILS_SHEET_NAME);
@@ -261,22 +230,21 @@ function updatePersonEmail(badgeNo, email) {
   };
 }
 
-
 function saveClientRequestState(data) {
   const badgeNo = normalizeBadgeNo(data.badgeNo);
   const nameHe = normalizeText(data.nameHe);
   const email = normalizeText(data.email);
   const publishAllowed = !!data.publishAllowed;
-  let userAction = normalizeUserAction_(data.userAction || data.requestAction);
+  const userAction = normalizeUserAction_(data.userAction || data.requestAction);
   const pointCount = toSafeNumber(data.pointCount);
   const childCount = toSafeNumber(data.childCount);
 
   if (!badgeNo || !nameHe || !email) {
-    return jsonOutput({
-      ok: false,
-      version: SCRIPT_VERSION,
-      error: 'Missing required fields'
-    });
+    return jsonOutput({ ok: false, version: SCRIPT_VERSION, error: 'Missing required fields' });
+  }
+
+  if (!userAction) {
+    return jsonOutput({ ok: false, version: SCRIPT_VERSION, error: 'Missing or invalid userAction' });
   }
 
   const sheet = getRequestsSheet_();
@@ -284,18 +252,6 @@ function saveClientRequestState(data) {
 
   const now = new Date();
   const existing = findSingleRequestRowByBadgeNo_(sheet, badgeNo);
-
-  if (!userAction) {
-    userAction = inferUserActionFromExisting_(sheet, existing);
-  }
-
-  if (!userAction) {
-    return jsonOutput({
-      ok: false,
-      version: SCRIPT_VERSION,
-      error: 'Missing or invalid userAction'
-    });
-  }
 
   if (existing) {
     const oldAction = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Action')) || '-';
@@ -332,12 +288,7 @@ function saveClientRequestState(data) {
     SpreadsheetApp.flush();
 
     const notifyResult = sendAdminNotificationOnly(
-      badgeNo,
-      nameHe,
-      email,
-      publishAllowed,
-      userAction,
-      reqId
+      badgeNo, nameHe, email, publishAllowed, userAction, reqId
     );
 
     setCellByHeader(sheet, existing.row, 'NotifySent', notifyResult.sent ? 'כן' : 'לא');
@@ -382,9 +333,7 @@ function saveClientRequestState(data) {
     'NotifyError': ''
   };
 
-  const rowValues = buildRowByHeaders(sheet, rowObj);
-  sheet.appendRow(rowValues);
-
+  sheet.appendRow(buildRowByHeaders(sheet, rowObj));
   const savedRow = sheet.getLastRow();
 
   appendRequestLog_({
@@ -404,12 +353,7 @@ function saveClientRequestState(data) {
   SpreadsheetApp.flush();
 
   const notifyResult = sendAdminNotificationOnly(
-    badgeNo,
-    nameHe,
-    email,
-    publishAllowed,
-    userAction,
-    reqId
+    badgeNo, nameHe, email, publishAllowed, userAction, reqId
   );
 
   setCellByHeader(sheet, savedRow, 'NotifySent', notifyResult.sent ? 'כן' : 'לא');
@@ -431,7 +375,6 @@ function saveClientRequestState(data) {
   });
 }
 
-// תאימות לאחור לשם הישן.
 function submitMapRequest(data) {
   data.userAction = data.userAction || data.requestAction || 'עדכון';
   return saveClientRequestState(data);
@@ -447,25 +390,6 @@ function deleteAllMapRequests(data) {
   return saveClientRequestState(data);
 }
 
-function inferUserActionFromExisting_(sheet, existing) {
-  if (!existing) {
-    return 'יצירה';
-  }
-
-  const action = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Action')) || '-';
-  const status = normalizeText(getCellValueByHeader_(sheet, existing.row, 'Status'));
-
-  if (status === 'נמחק' || action === 'מחיקה') {
-    return 'שחזור';
-  }
-
-  if (status === 'בטיפול' && action !== '-') {
-    return normalizeUserAction_(action);
-  }
-
-  return 'עדכון';
-}
-
 function normalizeUserAction_(value) {
   const text = normalizeText(value);
   const allowed = ['יצירה', 'עדכון', 'מחיקה', 'שחזור'];
@@ -474,25 +398,17 @@ function normalizeUserAction_(value) {
 
 function buildUserActionMessage_(userAction) {
   switch (userAction) {
-    case 'יצירה':
-      return 'הבקשה נשלחה לטיפול';
-    case 'עדכון':
-      return 'עדכון הבקשה נשלח לטיפול';
-    case 'מחיקה':
-      return 'בקשת המחיקה נשלחה לטיפול';
-    case 'שחזור':
-      return 'בקשת השחזור נשלחה לטיפול';
-    default:
-      return 'הפעולה נשלחה לטיפול';
+    case 'יצירה': return 'הבקשה נשלחה לטיפול';
+    case 'עדכון': return 'עדכון הבקשה נשלח לטיפול';
+    case 'מחיקה': return 'בקשת המחיקה נשלחה לטיפול';
+    case 'שחזור': return 'בקשת השחזור נשלחה לטיפול';
+    default: return 'הפעולה נשלחה לטיפול';
   }
 }
 
 function findSingleRequestRowByBadgeNo_(sheet, badgeNo) {
   const rows = findRequestRowsByBadgeNo_(sheet, badgeNo);
-  if (!rows || rows.length === 0) {
-    return null;
-  }
-  // במודל החדש אמורה להיות רשומה אחת בלבד. אם קיימות ישנות, משתמשים באחרונה.
+  if (!rows || rows.length === 0) return null;
   return rows[rows.length - 1];
 }
 
@@ -500,9 +416,7 @@ function getRequestLogSheet_() {
   const ss = SpreadsheetApp.openById(LOCAL_SPREADSHEET_ID);
   let sheet = ss.getSheetByName(REQUESTS_LOG_SHEET_NAME);
 
-  if (!sheet) {
-    sheet = ss.insertSheet(REQUESTS_LOG_SHEET_NAME);
-  }
+  if (!sheet) sheet = ss.insertSheet(REQUESTS_LOG_SHEET_NAME);
 
   ensureRequestLogHeaders_(sheet);
   return sheet;
@@ -521,8 +435,6 @@ function ensureRequestLogHeaders_(sheet) {
     'NewStatus',
     'OldPublish',
     'NewPublish',
-    'OldEmail',
-    'NewEmail',
     'Message',
     'ScriptVersion'
   ];
@@ -534,9 +446,7 @@ function ensureRequestLogHeaders_(sheet) {
 
   const lastCol = Math.max(sheet.getLastColumn(), 1);
   const existingHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
-    .map(function (h) {
-      return normalizeText(h);
-    });
+    .map(function (h) { return normalizeText(h); });
 
   headers.forEach(function (header) {
     if (existingHeaders.indexOf(header) === -1) {
@@ -552,7 +462,7 @@ function appendRequestLog_(entry) {
     'ReqId': entry.reqId || '',
     'DateTime': new Date(),
     'BadgeNo': entry.badgeNo || '',
-    'UserName': entry.userName || entry.nameHe || '',
+    'UserName': entry.userName || '',
     'UserAction': entry.userAction || '',
     'OldAction': entry.oldAction || '',
     'OldStatus': entry.oldStatus || '',
@@ -560,8 +470,6 @@ function appendRequestLog_(entry) {
     'NewStatus': entry.newStatus || '',
     'OldPublish': entry.oldPublish || '',
     'NewPublish': entry.newPublish || '',
-    'OldEmail': entry.oldEmail || '',
-    'NewEmail': entry.newEmail || '',
     'Message': entry.message || '',
     'ScriptVersion': SCRIPT_VERSION
   };
@@ -572,9 +480,7 @@ function getRequestsSheet_() {
   const ss = SpreadsheetApp.openById(LOCAL_SPREADSHEET_ID);
   let sheet = ss.getSheetByName(REQUESTS_SHEET_NAME);
 
-  if (!sheet) {
-    sheet = ss.insertSheet(REQUESTS_SHEET_NAME);
-  }
+  if (!sheet) sheet = ss.insertSheet(REQUESTS_SHEET_NAME);
 
   return sheet;
 }
@@ -607,9 +513,7 @@ function ensureRequestHeaders(sheet) {
 
   const lastCol = Math.max(sheet.getLastColumn(), 1);
   const existingHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
-    .map(function (h) {
-      return normalizeText(h);
-    });
+    .map(function (h) { return normalizeText(h); });
 
   requiredHeaders.forEach(function (header) {
     if (existingHeaders.indexOf(header) === -1) {
@@ -624,10 +528,7 @@ function getRequestStatusListByBadgeNo(badgeNo) {
   ensureRequestHeaders(sheet);
 
   const item = findSingleRequestRowByBadgeNo_(sheet, badgeNo);
-
-  if (!item) {
-    return [];
-  }
+  if (!item) return [];
 
   return [requestRowToClientObject_(sheet, item.row)];
 }
@@ -638,7 +539,6 @@ function requestRowToClientObject_(sheet, rowNumber) {
     action: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'Action')),
     status: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'Status')),
     publishAllowed: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'PublishAllowed')),
-    email: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'Email')),
     pointCount: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'PointCount')),
     childCount: normalizeText(getCellValueByHeader_(sheet, rowNumber, 'ChildCount')),
     reqDate: formatDateForClient_(getCellValueByHeader_(sheet, rowNumber, 'reqDate')),
@@ -652,24 +552,17 @@ function findRequestRowsByBadgeNo_(sheet, badgeNo) {
   const headerMap = getHeaderMap(sheet);
   const badgeCol = headerMap['BadgeNo'];
 
-  if (!badgeCol) {
-    throw new Error('Missing header: BadgeNo');
-  }
+  if (!badgeCol) throw new Error('Missing header: BadgeNo');
 
   const lastRow = sheet.getLastRow();
-
-  if (lastRow < 2) {
-    return [];
-  }
+  if (lastRow < 2) return [];
 
   const values = sheet.getRange(2, badgeCol, lastRow - 1, 1).getValues();
   const result = [];
 
   values.forEach(function (row, index) {
     if (normalizeBadgeNo(row[0]) === badgeNo) {
-      result.push({
-        row: index + 2
-      });
+      result.push({ row: index + 2 });
     }
   });
 
@@ -681,19 +574,11 @@ function findRequestRowByReqId_(sheet, reqId, badgeNo) {
   const reqIdCol = headerMap['ReqId'];
   const badgeCol = headerMap['BadgeNo'];
 
-  if (!reqIdCol) {
-    throw new Error('Missing header: ReqId');
-  }
-
-  if (!badgeCol) {
-    throw new Error('Missing header: BadgeNo');
-  }
+  if (!reqIdCol) throw new Error('Missing header: ReqId');
+  if (!badgeCol) throw new Error('Missing header: BadgeNo');
 
   const lastRow = sheet.getLastRow();
-
-  if (lastRow < 2) {
-    return null;
-  }
+  if (lastRow < 2) return null;
 
   const width = sheet.getLastColumn();
   const values = sheet.getRange(2, 1, lastRow - 1, width).getValues();
@@ -703,9 +588,7 @@ function findRequestRowByReqId_(sheet, reqId, badgeNo) {
     const rowBadgeNo = normalizeBadgeNo(values[i][badgeCol - 1]);
 
     if (rowReqId === String(reqId) && rowBadgeNo === badgeNo) {
-      return {
-        row: i + 2
-      };
+      return { row: i + 2 };
     }
   }
 
@@ -718,9 +601,7 @@ function getHeaderMap(sheet) {
 
   headers.forEach(function (header, index) {
     const key = normalizeText(header);
-    if (key) {
-      map[key] = index + 1;
-    }
+    if (key) map[key] = index + 1;
   });
 
   return map;
@@ -739,9 +620,7 @@ function setCellByHeader(sheet, rowNumber, headerName, value) {
   const headerMap = getHeaderMap(sheet);
   const col = headerMap[headerName];
 
-  if (!col) {
-    throw new Error('Missing header: ' + headerName);
-  }
+  if (!col) throw new Error('Missing header: ' + headerName);
 
   sheet.getRange(rowNumber, col).setValue(value);
 }
@@ -750,9 +629,7 @@ function getCellValueByHeader_(sheet, rowNumber, headerName) {
   const headerMap = getHeaderMap(sheet);
   const col = headerMap[headerName];
 
-  if (!col) {
-    return '';
-  }
+  if (!col) return '';
 
   return sheet.getRange(rowNumber, col).getValue();
 }
@@ -760,33 +637,24 @@ function getCellValueByHeader_(sheet, rowNumber, headerName) {
 function getNextReqIdByHeader(sheet, headerMap) {
   const reqIdCol = headerMap['ReqId'];
 
-  if (!reqIdCol) {
-    throw new Error('Missing header: ReqId');
-  }
+  if (!reqIdCol) throw new Error('Missing header: ReqId');
 
   const lastRow = sheet.getLastRow();
-
-  if (lastRow < 2) {
-    return 1;
-  }
+  if (lastRow < 2) return 1;
 
   const values = sheet.getRange(2, reqIdCol, lastRow - 1, 1).getValues();
   let maxId = 0;
 
   values.forEach(function (row) {
     const n = Number(row[0]);
-    if (!isNaN(n) && n > maxId) {
-      maxId = n;
-    }
+    if (!isNaN(n) && n > maxId) maxId = n;
   });
 
   return maxId + 1;
 }
 
 function formatDateForClient_(value) {
-  if (!value) {
-    return '';
-  }
+  if (!value) return '';
 
   if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value.getTime())) {
     return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
@@ -809,37 +677,49 @@ function sendAdminNotificationOnly(badgeNo, nameHe, email, publishAllowed, reque
     const actionText = requestAction || 'יצירה';
     const reqText = reqId ? 'בקשה: ' + reqId + '\n' : '';
 
-    MailApp.sendEmail({
-      to: NOTIFY_EMAIL,
-      subject: 'בקשה למפה אישית - ' + actionText + ' - יעל #' + badgeNo,
-      body:
-        'התקבלה פעולה בבקשה למפה אישית.\n\n' +
-        reqText +
-        'פעולה: ' + actionText + '\n' +
-        'מספר יעל: ' + badgeNo + '\n' +
-        'שם: ' + nameHe + '\n' +
-        'אימייל: ' + email + '\n' +
-        'אישור הפצה באתר: ' + (publishAllowed ? 'כן' : 'לא') + '\n\n' +
-        'גרסת סקריפט: ' + SCRIPT_VERSION
-    });
+    const subject = 'בקשה למפה אישית - ' + actionText + ' - יעל #' + badgeNo;
 
-    return {
-      sent: true,
-      error: ''
-    };
+    const body =
+      'התקבלה פעולה בבקשה למפה אישית.\n\n' +
+      reqText +
+      'פעולה: ' + actionText + '\n' +
+      'מספר יעל: ' + badgeNo + '\n' +
+      'שם: ' + nameHe + '\n' +
+      'אימייל: ' + email + '\n' +
+      'אישור הפצה באתר: ' + (publishAllowed ? 'כן' : 'לא') + '\n\n' +
+      'גרסת סקריפט: ' + SCRIPT_VERSION;
+
+    const label =
+      GmailApp.getUserLabelByName(DEV_REQUEST_LABEL) ||
+      GmailApp.createLabel(DEV_REQUEST_LABEL);
+
+    const draft = GmailApp.createDraft(
+      NOTIFY_EMAIL,
+      subject,
+      body,
+      {
+        from: MAIL_FROM_ALIAS,
+        name: MAIL_FROM_NAME
+      }
+    );
+
+    const thread = draft.getMessage().getThread();
+    draft.send();
+
+    Utilities.sleep(1000);
+
+    thread.addLabel(label);
+    thread.moveToArchive();
+
+    return { sent: true, error: '' };
 
   } catch (err) {
-    return {
-      sent: false,
-      error: String(err)
-    };
+    throw new Error('שליחת מייל נכשלה: ' + String(err));
   }
 }
 
 function normalizeBadgeNo(value) {
-  if (value === null || value === undefined) {
-    return '';
-  }
+  if (value === null || value === undefined) return '';
 
   let s = String(value).trim();
   s = s.replace(/\.0$/, '');
@@ -849,10 +729,7 @@ function normalizeBadgeNo(value) {
 }
 
 function normalizeText(value) {
-  if (value === null || value === undefined) {
-    return '';
-  }
-
+  if (value === null || value === undefined) return '';
   return String(value).trim();
 }
 
